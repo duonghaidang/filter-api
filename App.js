@@ -13,12 +13,15 @@ import {
 } from 'react-native';
 import Modal from 'react-native-modal';
 import API from './api';
+import _ from 'lodash';
 
 const App = () => {
   const [isVisible, setIsVisible] = useState(false);
   const [objFilter, setObjectFilter] = useState({});
   const [list, setList] = useState();
+  const [filterPosition, setFilterPosition] = useState([]);
   let filter = `&filter=`;
+
   useEffect(() => {
     getData(filter, (arr) => setList(arr));
   }, []);
@@ -47,8 +50,15 @@ const App = () => {
         stringTemp = `${stringTemp}${d > 0 ? ',' : ''}${`"${listKeys[d]}":{"$in":${JSON.stringify(listValues[d])}}`}`; // and
       }
     }
+    const checkFilterPositions = filterPosition?.length === 2 && !filterPosition?.includes('' || NaN);
     // filter = `${filter} {"$or":[${stringTemp}] }`; // or
-    filter = `${filter}{${stringTemp}}`; // and
+    filter = `${filter}{${stringTemp}${
+      checkFilterPositions
+        ? `${stringTemp?.length && checkFilterPositions ? ',' : ''} "position": {"$between" : ${JSON.stringify(
+            filterPosition,
+          )}}`
+        : ''
+    }}`; // and
     setIsVisible(false);
 
     setTimeout(() => {
@@ -56,6 +66,14 @@ const App = () => {
       // setObjectFilter({});
     }, 100);
   };
+
+  const onChangeText = _.debounce(
+    (text) =>
+      searchData(text, (arr) => {
+        setList(arr);
+      }),
+    1000,
+  );
 
   return (
     <SafeAreaView style={{ backgroundColor: 'white', flex: 1 }}>
@@ -67,7 +85,11 @@ const App = () => {
           backgroundColor: 'orange',
           paddingVertical: 10,
         }}>
-        <TextInput style={{ backgroundColor: 'white', flex: 0.8 }} placeholder="Nhập để tìm kiếm" />
+        <TextInput
+          style={{ backgroundColor: 'white', flex: 0.8, borderRadius: 8, marginLeft: 8, paddingHorizontal: 8 }}
+          placeholder="Nhập để tìm kiếm"
+          onChangeText={onChangeText}
+        />
         <TouchableOpacity
           onPress={() => setIsVisible(true)}
           style={{ flex: 0.2, alignItems: 'center', justifyContent: 'center' }}>
@@ -98,7 +120,46 @@ const App = () => {
             keyExtractor={(item, index) => item + index}
             renderItem={({ item }) => <Item item={item} onClickItem={onClickItem} objFilter={objFilter} />}
             renderSectionHeader={({ section: { header } }) => <Text style={styles.header}>{header?.title}</Text>}
+            ListFooterComponent={() => {
+              return (
+                <View>
+                  <Text style={styles.header}>{'Vị trí'}</Text>
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      marginVertical: 10,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}>
+                    <TextInput
+                      placeholder={filterPosition[0]?.toString() || '0'}
+                      keyboardType="number-pad"
+                      onChangeText={(text) => {
+                        const filterPositionTemp = filterPosition;
+                        if (!filterPositionTemp[0]) filterPositionTemp[0] = '';
+                        filterPositionTemp[0] = parseInt(text);
+                        setFilterPosition(filterPositionTemp);
+                      }}
+                      style={styles.input}
+                    />
+                    <Text>-</Text>
+                    <TextInput
+                      placeholder={filterPosition[1]?.toString() || '0'}
+                      keyboardType="number-pad"
+                      onChangeText={(text) => {
+                        const filterPositionTemp = filterPosition;
+                        if (!filterPositionTemp[1]) filterPositionTemp[1] = '';
+                        filterPositionTemp[1] = parseInt(text);
+                        setFilterPosition(filterPositionTemp);
+                      }}
+                      style={styles.input}
+                    />
+                  </View>
+                </View>
+              );
+            }}
           />
+
           <View style={{ flexDirection: 'row', marginVertical: 10, justifyContent: 'flex-end' }}>
             <TouchableOpacity
               style={{ marginHorizontal: 10 }}
@@ -129,10 +190,29 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     paddingTop: 10,
   },
+  input: {
+    borderWidth: 1,
+    borderRadius: 8,
+    flex: 1,
+    marginHorizontal: 10,
+  },
 });
 
 const getData = (filter, onSuccess = () => {}) => {
   API.get(`/category?fields=["$all", {"categories": ["id"]}]${filter}`)
+    .then(({ data }) => {
+      if (data?.code === 200) {
+        const arr = data?.results?.objects?.rows;
+        onSuccess(arr);
+      }
+    })
+    .catch((error) => {
+      console.log('getData -> error', error);
+    });
+};
+
+const searchData = (text, onSuccess = () => {}) => {
+  API.get(`/category?fields=["$all", {"categories": ["id"]}]&filter={"title" : { "$iLike" : "%25${text}%25" }}`)
     .then(({ data }) => {
       if (data?.code === 200) {
         const arr = data?.results?.objects?.rows;
@@ -150,6 +230,7 @@ const renderItem = ({ item }) => {
       <Image style={{ width: 50, height: 50 }} source={{ uri: item?.image }} />
       <Text style={{ marginLeft: 10 }}>{item?.title}</Text>
       <Text style={{ marginLeft: 10 }}>{item?.is_free ? '-  Miễn phí' : '-  Tính phí'}</Text>
+      <Text style={{ marginLeft: 10 }}>- {item?.position}</Text>
     </View>
   );
 };
